@@ -1,0 +1,327 @@
+name: n8n
+title: n8n
+guidance: GUIDANCE.md
+icon: n8n
+type: service
+
+labels:
+- n8n
+- automation
+
+# n8n releases a new minor version every week. One option per major version
+# follows them.
+options:
+- version: '2'
+  tag: '2.46.4'
+  default: true
+
+# One replica only: running more than one main n8n process needs n8n's queue
+# mode or an Enterprise license.
+deployment:
+  shutdownGracePeriod: 60s
+
+endpoints:
+- name: n8n
+  ports:
+  - name: http
+    number: 5678
+    protocol: http
+    main: true
+    # No request_body_size here: it buffers requests in the gateway, and the
+    # editor's WebSocket connection then fails.
+    routeDefaults:
+      https_redirect: 'true'
+      # A webhook can wait for its workflow to finish before it answers.
+      request_timeout: 0s
+      backend_request_timeout: 0s
+
+tokens:
+- name: encryption_key
+  generate:
+    regex: '[A-Za-z0-9]{64}'
+# Shared by n8n and its task runner container.
+- name: runners_token
+  generate:
+    regex: '[A-Za-z0-9]{64}'
+
+settings:
+# The owner account. n8n applies it on every start, so its setup page is never
+# shown and no one else can claim a new site first.
+- name: admin-email
+  title: Owner email
+  description: Email address the n8n owner signs in with. n8n applies it on every start.
+  required: true
+  var: N8N_INSTANCE_OWNER_EMAIL
+- name: admin-password
+  title: Owner password
+  description: Password of the n8n owner, at least 8 characters. n8n applies it on every start; change it here, not in n8n.
+  required: true
+  secret: true
+  var: N8N_INSTANCE_OWNER_PASSWORD
+- name: timezone
+  title: Timezone
+  description: Default timezone of schedules and date functions, for example Europe/Berlin.
+  default: UTC
+  var: GENERIC_TIMEZONE
+
+env:
+# Encrypts the credentials n8n stores. Changing it makes them unreadable.
+- name: N8N_ENCRYPTION_KEY
+  value: '{{encryption_key}}'
+  secret: true
+- name: N8N_INSTANCE_OWNER_MANAGED_BY_ENV
+  value: 'true'
+- name: N8N_INSTANCE_OWNER_FIRST_NAME
+  value: Owner
+# The start script sets WEBHOOK_URL and N8N_EDITOR_BASE_URL from it.
+- name: N8N_PUBLIC_URL
+  value: '{{service.primaryURL}}'
+- name: N8N_PORT
+  value: '5678'
+# Code nodes run in the separate runner container, which reaches n8n's task
+# broker on localhost.
+- name: N8N_RUNNERS_MODE
+  value: external
+- name: N8N_RUNNERS_AUTH_TOKEN
+  value: '{{runners_token}}'
+  secret: true
+# A Code node may run for 5 minutes, n8n's 2.x default, which 3.x lowers.
+- name: N8N_RUNNERS_TASK_TIMEOUT
+  value: '300'
+# Wodby's router is the one proxy in front of n8n.
+- name: N8N_PROXY_HOPS
+  value: '1'
+- name: TZ
+  value: '{{settings.timezone}}'
+- name: DB_TYPE
+  value: postgresdb
+- name: N8N_DIAGNOSTICS_ENABLED
+  value: 'false'
+- name: N8N_VERSION_NOTIFICATIONS_ENABLED
+  value: 'false'
+
+links:
+- name: postgres
+  title: PostgreSQL
+  required: true
+  selectors:
+  - type: db
+    labels:
+    - postgres
+  env:
+  - name: DB_POSTGRESDB_HOST
+    value: '{{link.database.host}}'
+  - name: DB_POSTGRESDB_PORT
+    value: '{{link.database.port}}'
+  - name: DB_POSTGRESDB_DATABASE
+    value: '{{link.database.db.name}}'
+  - name: DB_POSTGRESDB_USER
+    value: '{{link.database.user.name}}'
+    secret: true
+  - name: DB_POSTGRESDB_PASSWORD
+    value: '{{link.database.user.password}}'
+    secret: true
+- name: sendmail
+  title: SMTP server
+  selectors:
+  - type: service
+    labels:
+    - smtpd
+  env:
+  - name: N8N_EMAIL_MODE
+    value: smtp
+  - name: N8N_SMTP_HOST
+    value: '{{link.host}}'
+  - name: N8N_SMTP_PORT
+    value: '{{link.port}}'
+  - name: N8N_SMTP_SSL
+    value: 'false'
+  - name: N8N_SMTP_STARTTLS
+    value: 'false'
+  - name: N8N_SMTP_SENDER
+    value: 'n8n <noreply@{{service.primaryHost}}>'
+
+volumes:
+- name: data
+  title: n8n data
+  size: 10
+  helm:
+    labels: persistence.labels
+    values:
+    - name: persistence.enabled
+      value: true
+    - name: persistence.size
+      value: '{{volumes.data.size}}Gi'
+    - name: persistence.storageClass
+      value: '{{volumes.data.storageClassName}}'
+
+helm:
+  name: wodby
+  source: oci://registry-1.docker.io/wodby/stateful
+  chart: oci://registry-1.docker.io/wodby/stateful
+  version: 0.4.0
+  valueMappings:
+    replicas: replicaCount
+    nameOverride: nameOverride
+    fullnameOverride: fullnameOverride
+    serviceAccountName: serviceAccount.name
+    serviceAccountCreate: serviceAccount.create
+    minReady: minReadySeconds
+    shutdownGracePeriod: terminationGracePeriodSeconds
+  values:
+  - name: containerName
+    value: n8n
+  - name: containerPorts
+    value:
+    - name: http
+      containerPort: 5678
+      protocol: TCP
+  - name: podSecurityContext
+    value:
+      fsGroup: 1000
+      fsGroupChangePolicy: OnRootMismatch
+  - name: securityContext
+    value:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+      runAsGroup: 1000
+      runAsNonRoot: true
+      runAsUser: 1000
+  # The runner gets only the variables it needs, not n8n's. Its token is read
+  # from the service's environment Secret.
+  - name: additionalContainers.runner.envVars
+    value:
+    - name: N8N_RUNNERS_AUTH_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: '{{service.secrets.env}}'
+          key: N8N_RUNNERS_AUTH_TOKEN
+    - name: N8N_RUNNERS_TASK_BROKER_URI
+      value: http://127.0.0.1:5679
+    - name: N8N_RUNNERS_TASK_TIMEOUT
+      value: '300'
+    - name: GENERIC_TIMEZONE
+      value: '{{settings.timezone}}'
+  - name: additionalContainers.runner.livenessProbe
+    value:
+      httpGet:
+        path: /healthz
+        port: 5680
+      failureThreshold: 6
+      periodSeconds: 10
+      timeoutSeconds: 5
+  # Community nodes, binary data and n8n's own files.
+  - name: persistence.mountPath
+    value: /home/node/.n8n
+  - name: command
+    value:
+    - tini
+    - --
+    - /bin/sh
+    - -ec
+    - |
+      # n8n takes the owner's password only as a bcrypt hash. It is made here
+      # from the Owner password setting with the bcrypt library n8n ships. The
+      # salt comes from the password and the encryption key, so the hash stays
+      # the same across restarts and sign-ins survive them.
+      N8N_INSTANCE_OWNER_PASSWORD_HASH="$(node -e '
+      const crypto = require("crypto");
+      const bcrypt = require(require.resolve("bcryptjs", { paths: ["/usr/local/lib/node_modules/n8n"] }));
+      const password = process.env.N8N_INSTANCE_OWNER_PASSWORD || "";
+      if (password.length < 8) {
+        console.error("The Owner password setting must have at least 8 characters.");
+        process.exit(1);
+      }
+      const alphabet = "./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+      const digest = crypto.createHmac("sha256", process.env.N8N_ENCRYPTION_KEY).update(password).digest();
+      let salt = "$2a$10$";
+      for (let i = 0; i < 22; i++) salt += alphabet[digest[i] % 64];
+      process.stdout.write(bcrypt.hashSync(password, salt));
+      ')"
+      export N8N_INSTANCE_OWNER_PASSWORD_HASH
+      unset N8N_INSTANCE_OWNER_PASSWORD
+
+      # Webhook and editor links use the service's URL. Without one, n8n
+      # builds them from the request.
+      if [ -n "${N8N_PUBLIC_URL:-}" ]; then
+        export WEBHOOK_URL="${N8N_PUBLIC_URL%/}/"
+        export N8N_EDITOR_BASE_URL="${N8N_PUBLIC_URL%/}/"
+      fi
+
+      exec /docker-entrypoint.sh
+  # Database migrations on a new version can take several minutes.
+  - name: startupProbe
+    value:
+      httpGet:
+        path: /healthz/readiness
+        port: http
+      failureThreshold: 90
+      periodSeconds: 10
+      timeoutSeconds: 5
+  - name: readinessProbe
+    value:
+      httpGet:
+        path: /healthz/readiness
+        port: http
+      failureThreshold: 3
+      periodSeconds: 10
+      timeoutSeconds: 5
+  - name: livenessProbe
+    value:
+      httpGet:
+        path: /healthz
+        port: http
+      failureThreshold: 6
+      periodSeconds: 10
+      timeoutSeconds: 5
+
+workloads:
+- name: main
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: '{{helm.release}}'
+  kind: statefulset
+  primary: true
+  helm:
+    labels: commonLabels
+    annotations: commonAnnotations
+    volumes: extraVolumes
+    sidecars: extraContainers
+  containers:
+  - name: n8n
+    image: n8nio/n8n
+    resources:
+      request:
+        cpu: 500
+        memory: 1024
+      limit:
+        cpu: 2000
+        memory: 2048
+    helm:
+      resources: resources
+      env: envVars
+      mounts: extraVolumeMounts
+      image:
+        repository: image.repository
+        tag: image.tag
+        registry: image.registry
+        pullPolicy: image.pullPolicy
+  # Runs JavaScript and Python Code nodes. Its image tag follows the n8n option.
+  - name: runner
+    image: n8nio/runners
+    resources:
+      request:
+        cpu: 100
+        memory: 256
+      limit:
+        cpu: 1000
+        memory: 1024
+    helm:
+      resources: additionalContainers.runner.resources
+      image:
+        repository: additionalContainers.runner.image.repository
+        tag: additionalContainers.runner.image.tag
+        registry: additionalContainers.runner.image.registry
+        pullPolicy: additionalContainers.runner.image.pullPolicy
