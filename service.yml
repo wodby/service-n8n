@@ -73,7 +73,7 @@ env:
   value: 'true'
 - name: N8N_INSTANCE_OWNER_FIRST_NAME
   value: Owner
-# The start script sets WEBHOOK_URL and N8N_EDITOR_BASE_URL from it.
+# The start script sets N8N_WEBHOOK_URL and N8N_EDITOR_BASE_URL from it.
 - name: N8N_PUBLIC_URL
   value: '{{service.primaryURL}}'
 - name: N8N_PORT
@@ -246,7 +246,7 @@ helm:
       # Webhook and editor links use the service's URL. Without one, n8n
       # builds them from the request.
       if [ -n "${N8N_PUBLIC_URL:-}" ]; then
-        export WEBHOOK_URL="${N8N_PUBLIC_URL%/}/"
+        export N8N_WEBHOOK_URL="${N8N_PUBLIC_URL%/}/"
         export N8N_EDITOR_BASE_URL="${N8N_PUBLIC_URL%/}/"
       fi
 

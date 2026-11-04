@@ -14,7 +14,7 @@ What Wodby sets up for n8n on this service. n8n runs from the official `n8nio/n8
 ## What the manifest sets
 
 - `N8N_ENCRYPTION_KEY` comes from the generated token `encryption_key`. n8n encrypts stored credentials with it. Changing it makes them unreadable, so keep it. A copy of the database restored into another environment needs the same key.
-- `WEBHOOK_URL` and `N8N_EDITOR_BASE_URL` are the service's URL. The start script sets them from `N8N_PUBLIC_URL`. Without a URL, n8n builds links from the request.
+- `N8N_WEBHOOK_URL` and `N8N_EDITOR_BASE_URL` are the service's URL. The start script sets them from `N8N_PUBLIC_URL`. Without a URL, n8n builds links from the request.
 - `N8N_PROXY_HOPS` is `1`: TLS ends at Wodby's router, and n8n reads the client address from its headers. HTTP requests are redirected to HTTPS by default.
 - `GENERIC_TIMEZONE` and `TZ` come from the Timezone setting, `UTC` by default.
 - `N8N_DIAGNOSTICS_ENABLED` and `N8N_VERSION_NOTIFICATIONS_ENABLED` are `false`. Wodby delivers new versions.
