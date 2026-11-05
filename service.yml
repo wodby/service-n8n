@@ -12,7 +12,7 @@ labels:
 # follows them.
 options:
 - version: '2'
-  tag: '2.46.4'
+  tag: '2.47.2'
   default: true
 
 # One replica only: running more than one main n8n process needs n8n's queue
