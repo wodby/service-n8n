@@ -12,7 +12,7 @@ labels:
 # follows them.
 options:
 - version: '2'
-  tag: '2.47.2'
+  tag: '2.47.3'
   default: true
 
 # One replica only: running more than one main n8n process needs n8n's queue
@@ -49,18 +49,21 @@ settings:
 # shown and no one else can claim a new site first.
 - name: admin-email
   title: Owner email
-  description: Email address the n8n owner signs in with. n8n applies it on every start.
+  description: Email address the n8n owner signs in with. n8n applies it on 
+    every start.
   required: true
   var: N8N_INSTANCE_OWNER_EMAIL
 - name: admin-password
   title: Owner password
-  description: Password of the n8n owner, at least 8 characters. n8n applies it on every start; change it here, not in n8n.
+  description: Password of the n8n owner, at least 8 characters. n8n applies it 
+    on every start; change it here, not in n8n.
   required: true
   secret: true
   var: N8N_INSTANCE_OWNER_PASSWORD
 - name: timezone
   title: Timezone
-  description: Default timezone of schedules and date functions, for example Europe/Berlin.
+  description: Default timezone of schedules and date functions, for example 
+    Europe/Berlin.
   default: UTC
   var: GENERIC_TIMEZONE
 
